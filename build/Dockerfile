@@ -1,4 +1,4 @@
-FROM php:8.2-fpm-alpine3.18
+FROM php:8.2-fpm-alpine3.20
 
 ARG WORDPRESS_DOWNLOAD_URL
 
@@ -9,7 +9,6 @@ WORKDIR /
 ENV MUSL_LOCPATH /usr/share/i18n/locales/musl
 
 RUN apk add --update --upgrade --no-cache --no-interactive --no-progress  \
-    cmake \
     curl \
     freetype-dev \
     gcc \
@@ -27,17 +26,14 @@ RUN apk add --update --upgrade --no-cache --no-interactive --no-progress  \
     libwebp-dev \
     make \
     musl-dev \
+    musl-locales \
+    musl-locales-lang \
     nginx \
     oniguruma-dev \
     openssl \
     optipng \
     pngquant \
     unzip \
- && curl -O https://gitlab.com/rilian-la-te/musl-locales/-/archive/master/musl-locales-master.zip \
- && unzip musl-locales-master.zip \
- && cd musl-locales-master \
- && cmake -DLOCALE_PROFILE=OFF -D CMAKE_INSTALL_PREFIX:PATH=/usr . && make && make install \
- && cd .. && rm -r musl-locales-master \
  && docker-php-ext-configure gd  \
  && docker-php-ext-install gd gmp intl pdo pdo_mysql mbstring mysqli \
  && docker-php-ext-enable mysqli opcache
