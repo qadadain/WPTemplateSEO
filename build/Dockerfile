@@ -1,6 +1,7 @@
 FROM php:8.2-fpm-alpine3.20
 
 ARG WORDPRESS_DOWNLOAD_URL
+ARG WORDPRESS_LANGUAGE_PACK_URL
 
 USER root
 
@@ -47,6 +48,11 @@ WORKDIR /var/www/html
 RUN curl -sLfo wordpress.tar.gz ${WORDPRESS_DOWNLOAD_URL} \
  && tar -xvkf wordpress.tar.gz --strip-components=1 \
  && rm wordpress.tar.gz
+
+RUN mkdir -p wp-content/languages \
+ && curl -sLfo fr_FR.zip ${WORDPRESS_LANGUAGE_PACK_URL} \
+ && unzip -qq fr_FR.zip -d wp-content/languages \
+ && rm fr_FR.zip
 
 RUN rm -rf license.txt readme.html wp-config-sample.php
 
