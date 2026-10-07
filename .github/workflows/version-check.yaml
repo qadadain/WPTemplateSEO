@@ -1,0 +1,93 @@
+name: Verification des versions
+
+on:
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Comparer et appliquer les mises a jour
+        id: check
+        run: python build/check_versions.py --fix --output rapport.md
+
+      - name: Ouvrir la pull request
+        if: steps.check.outputs.fixable == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CRITIQUE: ${{ steps.check.outputs.critical }}
+          BASE: ${{ github.ref_name }}
+        run: |
+          if [ "$CRITIQUE" = "true" ]; then
+            TITRE="FAILLE CONNUE : mise a jour urgente"
+          else
+            TITRE="Mises a jour des versions"
+          fi
+          BRANCHE="chore/versions-$(date +%Y-%m-%d)"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCHE"
+          git add .env build/plugins.txt
+          git commit -m "chore: bump wordpress and plugin versions"
+          ARBRE=$(git rev-parse 'HEAD^{tree}')
+
+          OUVERTE=$(gh pr list --state open --json number,headRefName \
+            --jq '[.[] | select(.headRefName | startswith("chore/versions-"))][0]')
+          NUMERO=$(echo "$OUVERTE" | jq -r '.number // empty')
+          REF=$(echo "$OUVERTE" | jq -r '.headRefName // empty')
+
+          if [ -n "$REF" ]; then
+            git fetch --quiet origin "$REF"
+            if [ "$(git rev-parse "origin/$REF^{tree}")" = "$ARBRE" ]; then
+              echo "La PR #$NUMERO propose deja exactement ces versions, rien a faire."
+              exit 0
+            fi
+            gh pr close "$NUMERO" --comment "Remplacee par une PR plus recente." --delete-branch
+          fi
+
+          git push origin "$BRANCHE"
+          gh pr create --base "$BASE" --head "$BRANCHE" --title "$TITRE" --body-file rapport.md
+
+      - name: Ouvrir une issue si rien n'est corrigeable automatiquement
+        if: steps.check.outputs.fixable == 'false' && steps.check.outputs.outdated == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITRE: Mises a jour manuelles a faire
+        run: |
+          NUMERO=$(gh issue list --state open --search "in:title $TITRE" --json number --jq '.[0].number // empty')
+          if [ -n "$NUMERO" ]; then
+            gh issue edit "$NUMERO" --body-file rapport.md
+          else
+            gh issue create --title "$TITRE" --body-file rapport.md
+          fi
+
+      - name: Tout est a jour, on ferme
+        if: steps.check.outputs.outdated == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NUMERO=$(gh pr list --state open --json number,headRefName \
+            --jq '[.[] | select(.headRefName | startswith("chore/versions-"))][0].number // empty')
+          if [ -n "$NUMERO" ]; then
+            gh pr close "$NUMERO" --comment "Tout est a jour." --delete-branch
+          fi
+          ISSUE=$(gh issue list --state open --search "in:title Mises a jour manuelles a faire" --json number --jq '.[0].number // empty')
+          if [ -n "$ISSUE" ]; then
+            gh issue close "$ISSUE" --comment "Tout est a jour."
+          fi
